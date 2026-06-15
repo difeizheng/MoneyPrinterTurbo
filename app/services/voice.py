@@ -495,6 +495,11 @@ def create_edge_tts_communicate(
     if "boundary" in communicate_signature.parameters:
         communicate_kwargs["boundary"] = "WordBoundary"
 
+    # 读取代理配置
+    proxy_url = config.proxy.get("http") or config.proxy.get("https")
+    if proxy_url and "proxy" in communicate_signature.parameters:
+        communicate_kwargs["proxy"] = proxy_url
+
     return edge_tts.Communicate(text, voice_name, **communicate_kwargs)
 
 
