@@ -1,20 +1,33 @@
-# GPU override file
-# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# GPU standalone compose file
+# Usage: docker compose -f docker-compose.gpu.yml up
 #
 # Prerequisites:
 #   1. NVIDIA GPU driver installed on host
 #   2. NVIDIA Container Toolkit installed
 #   3. Verify with: docker info | grep nvidia
 #
-# This file overrides the default docker-compose.yml to:
+# This file extends docker-compose.yml and overrides:
 #   - Build with Dockerfile.gpu (NVIDIA CUDA base image)
-#   - Attach GPU device to the api service
+#   - Attach GPU device to both api and webui services
 services:
   webui:
+    extends:
+      file: docker-compose.yml
+      service: webui
     build:
       context: .
       dockerfile: Dockerfile.gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
   api:
+    extends:
+      file: docker-compose.yml
+      service: api
     build:
       context: .
       dockerfile: Dockerfile.gpu
