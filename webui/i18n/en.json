@@ -162,6 +162,24 @@
     "Coverr API Key deleted successfully": "Coverr API Key deleted successfully",
     "Advanced Video Settings": "Advanced Video Settings",
     "Video Encoder": "Video Encoder",
-    "Video Encoder Help": "Advanced option. libx264 is the safest default. When a hardware encoder is selected, the app falls back to libx264 if the current FFmpeg, GPU, or driver cannot use it."
+    "Video Encoder Help": "Advanced option. libx264 is the safest default. When a hardware encoder is selected, the app falls back to libx264 if the current FFmpeg, GPU, or driver cannot use it.",
+    "History Tasks": "History Tasks",
+    "Refresh": "Refresh",
+    "No Tasks Found": "No tasks yet — generate a video on the home page first",
+    "Select Task": "Select Task",
+    "Subject": "Subject",
+    "Created At": "Created At",
+    "Status": "Status",
+    "Completed": "Completed",
+    "Incomplete": "Incomplete",
+    "Voice": "Voice",
+    "Aspect": "Aspect",
+    "Duration": "Duration",
+    "Open Folder": "Open Folder",
+    "Download": "Download",
+    "Delete": "Delete",
+    "Confirm Delete": "Confirm delete? Click again to permanently remove this task",
+    "Deleted": "Deleted",
+    "No Subject": "(No Subject)"
   }
 }
