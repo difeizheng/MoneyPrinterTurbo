@@ -34,3 +34,9 @@ debug_*.py
 test_*.py
 !test/services/test_*.py
 streamlit.log
+
+# 个人一次性脚本与产物（含密钥/投标内容，仅本地保留，不进版本库）
+/ppt_slides/
+/ppt_to_video.py
+/resubmit_ppt_video.py
+/run_claude.bat
