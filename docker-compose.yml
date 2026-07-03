@@ -8,7 +8,7 @@ services:
       dockerfile: Dockerfile
     container_name: "moneyprinterturbo-webui"
     ports:
-      - "127.0.0.1:8501:8501"
+      - "127.0.0.1:3006:8501"
     command: [ "streamlit", "run", "./webui/Main.py","--browser.serverAddress=127.0.0.1","--server.enableCORS=True","--browser.gatherUsageStats=False","--server.showEmailPrompt=False" ]
     volumes: *common-volumes
     restart: always
