@@ -85,7 +85,7 @@ class VideoParams(BaseModel):
         None  # Materials used to generate the video
     )
     
-    custom_audio_file: Optional[str] = None  # Custom audio file path, will ignore video_script and disable subtitle
+    custom_audio_file: Optional[str] = None  # Custom audio file path, will ignore TTS and can still use Whisper subtitles
     video_language: Optional[str] = ""  # auto detect
 
     voice_name: Optional[str] = ""
@@ -168,7 +168,8 @@ class VideoTermsParams:
     {
       "video_subject": "",
       "video_script": "",
-      "amount": 5
+      "amount": 5,
+      "match_materials_to_script": false
     }
     """
 
@@ -177,6 +178,7 @@ class VideoTermsParams:
         "春天的花海，如诗如画般展现在眼前。万物复苏的季节里，大地披上了一袭绚丽多彩的盛装。金黄的迎春、粉嫩的樱花、洁白的梨花、艳丽的郁金香……"
     )
     amount: Optional[int] = 5
+    match_materials_to_script: bool = False
 
 
 class VideoSocialMetadataParams:

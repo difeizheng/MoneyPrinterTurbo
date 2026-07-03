@@ -32,15 +32,6 @@ materials, video subtitles, and video background music before synthesizing a hig
 <table align="center">
   <tr>
     <td align="center" width="160">
-      <a href="https://aihubmix.com/?aff=CEve"><strong>AIHubMix</strong></a>
-    </td>
-    <td align="left">
-      <sub>Thanks to <a href="https://aihubmix.com/?aff=CEve">AIHubMix</a> for sponsoring this project. AIHubMix deeply adapts to OpenAI, Claude, Gemini, DeepSeek, Zhipu, Qwen, and other leading models, providing one-stop access to GPT-5.5, deepseek-v4-flash, and 700+ models including free options with production-grade stability.</sub>
-    </td>
-  </tr>
-
-  <tr>
-    <td align="center" width="160">
       <a href="https://www.byteplus.com/en/product/modelark?utm_campaign=hw&utm_content=MoneyPrinterTurbo&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=MoneyPrinterTurbo"><img src="docs/sponsors/byteplus-logo.svg" alt="BytePlus" height="25"></a><br>
       <a href="https://www.byteplus.com/en/product/modelark?utm_campaign=hw&utm_content=MoneyPrinterTurbo&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=MoneyPrinterTurbo"><strong>BytePlus ModelArk</strong></a>
     </td>
@@ -50,7 +41,7 @@ materials, video subtitles, and video background music before synthesizing a hig
   </tr>
   <tr>
     <td align="center" width="160">
-      <a href="https://www.ccsub.net/register?ref=VCVDAWWY"><img src="docs/sponsors/ccsub-logo.jpg" alt="CCSub" height="36"></a><br>
+      <a href="https://www.ccsub.net/register?ref=VCVDAWWY"><img src="docs/sponsors/ccsub-logo.png" alt="CCSub" height="36"></a><br>
       <a href="https://www.ccsub.net/register?ref=VCVDAWWY"><strong>CCSub</strong></a>
     </td>
     <td align="left">
@@ -59,11 +50,20 @@ materials, video subtitles, and video background music before synthesizing a hig
   </tr>
   <tr>
     <td align="center" width="160">
+      <a href="https://www.compshare.cn/coding-plan?ytag=GPU_YY-git_MoneyPrinterTu"><img src="docs/sponsors/compshare-logo.png" alt="Compshare" height="34"></a><br>
+      <a href="https://www.compshare.cn/coding-plan?ytag=GPU_YY-git_MoneyPrinterTu"><strong>Compshare</strong></a>
+    </td>
+    <td align="left">
+      <sub>Thanks to <a href="https://www.compshare.cn/coding-plan?ytag=GPU_YY-git_MoneyPrinterTu">Compshare</a> for sponsoring this project! Compshare is an AI cloud platform under UCloud that provides one-stop API access to mainstream Chinese and international models with a single key. Its CodingPlan package focuses on cost-effective Chinese models such as GLM5.2 and Deepseek-v4, while also offering stable official relay channels for overseas models across different development scenarios. It is compatible with Claude Code, Codex, and other mainstream AI coding tools and general API calls, with enterprise-grade high concurrency, 24/7 technical support, and self-service invoicing. <a href="https://www.compshare.cn/coding-plan?ytag=GPU_YY-git_MoneyPrinterTu">Register now</a> to receive up to ¥10 in free trial credits.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="160">
       <a href="https://reccloud.com"><img src="docs/sponsors/reccloud-logo.svg" alt="RecCloud" height="36"></a><br>
       <a href="https://reccloud.com"><strong>RecCloud</strong></a>
     </td>
     <td align="left">
-      <sub>Due to the <strong>deployment</strong> and <strong>usage</strong> of this project, there is a certain threshold for some beginner users. We would like to express our special thanks to <a href="https://reccloud.com">RecCloud (AI-Powered Multimedia Service Platform)</a> for providing a free <code>AI Video Generator</code> service based on this project. It allows for online use without deployment, which is very convenient. Chinese version: <a href="https://reccloud.cn">https://reccloud.cn</a>, English version: <a href="https://reccloud.com">https://reccloud.com</a></sub>
+      <sub>Due to the <strong>deployment</strong> and <strong>usage</strong> of this project, there is a certain threshold for some beginner users. We would like to express our special thanks to <a href="https://reccloud.com">RecCloud (AI-Powered Multimedia Service Platform)</a> for providing a free <code>AI Video Generator</code> service based on this project. It allows for online use without deployment, which is very convenient.</sub>
     </td>
   </tr>
   <tr>
@@ -94,8 +94,9 @@ materials, video subtitles, and video background music before synthesizing a hig
       supports `subtitle outlining`
 - [x] Supports **background music**, either random or specified music files, with adjustable `background music volume`
 - [x] Video material sources are **high-definition** and **royalty-free**, and you can also use your own **local materials**
-- [x] Supports multiple stock video providers: **Pexels**, **Pixabay**, and **Coverr** (free HD/4K stock videos, subject to [Coverr license terms](https://coverr.co/license); mostly 16:9 landscape; register at [coverr.co/developers](https://coverr.co/developers?ctx=header_navigation), Demo tier 50 requests/hour)
-- [x] Supports integration with various models such as **OpenAI**, **AIHubMix**, **AIML API**, **Moonshot**, **Azure**, **gpt4free**, **one-api**, **Qwen**, **Google Gemini**, **Ollama**, **DeepSeek**, **MiniMax**, **ERNIE**, **Pollinations**, **ModelScope** and more
+- [x] Supports multiple stock video providers: **Pexels**, **Pixabay**, and **Coverr**
+- [x] Optional **TwelveLabs** video AI integration: use **Marengo** embeddings to semantically rank B-roll search terms against your subject, and **Pegasus** to QA/describe clips ([TwelveLabs API key](https://twelvelabs.io))
+- [x] Supports integration with various models such as **OpenAI**, **AIHubMix**, **AIML API**, **EvoLink**, **Moonshot**, **Azure**, **gpt4free**, **one-api**, **Qwen**, **Google Gemini**, **Ollama**, **DeepSeek**, **MiniMax**, **ERNIE**, **Pollinations**, **ModelScope** and more
 
 ## Video Demos 📺
 
@@ -190,7 +191,6 @@ git clone https://github.com/harry0703/MoneyPrinterTurbo.git
 - Copy the `config.example.toml` file and rename it to `config.toml`
 - Follow the instructions in the `config.toml` file to configure `pexels_api_keys` and `llm_provider`, and according to
   the llm_provider's service provider, set up the corresponding API Key
-- To use the recommended multi-model provider, you can set `llm_provider` to `aihubmix` and enter the corresponding API key.
 
 ### Docker Deployment 🐳
 

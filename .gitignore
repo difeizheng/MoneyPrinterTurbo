@@ -40,3 +40,7 @@ streamlit.log
 /ppt_to_video.py
 /resubmit_ppt_video.py
 /run_claude.bat
+
+.codegraph
+/docs/superpowers
+.understand-anything

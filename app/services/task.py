@@ -8,7 +8,7 @@ from loguru import logger
 from app.config import config
 from app.models import const
 from app.models.schema import VideoConcatMode, VideoParams
-from app.services import llm, material, subtitle, video, voice, upload_post
+from app.services import llm, material, subtitle, twelvelabs, video, voice, upload_post
 from app.services import state as sm
 from app.utils import file_security, utils
 
@@ -62,6 +62,14 @@ def generate_terms(task_id, params, video_script):
         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
         logger.error("failed to generate video terms.")
         return None
+
+    # 可选的 TwelveLabs Marengo 语义重排：未启用时返回原顺序，无任何副作用。
+    # 顺序匹配模式下关键词顺序本身就是脚本叙事顺序，必须保持原样，故跳过。
+    if not params.match_materials_to_script:
+        video_terms = twelvelabs.rerank_terms_by_subject(
+            video_subject=params.video_subject,
+            search_terms=video_terms,
+        )
 
     return video_terms
 
@@ -186,12 +194,22 @@ def generate_subtitle(task_id, params, video_script, sub_maker, audio_file):
         - subtitle_path: path to the generated subtitle file
     '''
     logger.info("\n\n## generating subtitle")
-    if not params.subtitle_enabled or sub_maker is None:
+    if not params.subtitle_enabled:
         return ""
 
     subtitle_path = path.join(utils.task_dir(task_id), "subtitle.srt")
     subtitle_provider = config.app.get("subtitle_provider", "edge").strip().lower()
     logger.info(f"\n\n## generating subtitle, provider: {subtitle_provider}")
+
+    if sub_maker is None and subtitle_provider != "whisper":
+        # 自定义音频不会经过 TTS，因此没有 Edge/Azure 等 TTS 返回的
+        # sub_maker 时间轴。只有 Whisper 可以直接从音频文件转写字幕；
+        # 其他字幕提供方继续保持原有行为，避免生成错误的空时间轴。
+        logger.warning(
+            "subtitle maker is missing, skip subtitle generation for provider: "
+            f"{subtitle_provider}"
+        )
+        return ""
 
     subtitle_fallback = False
     if subtitle_provider == "edge":
@@ -419,14 +437,33 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
         f"task {task_id} finished, generated {len(final_video_paths)} videos."
     )
 
-    # 7. Cross-post to TikTok/Instagram (if enabled)
+    # 7. Cross-post to social platforms (if enabled)
     cross_post_results = []
     if upload_post.upload_post_service.is_configured() and upload_post.upload_post_service.auto_upload:
-        logger.info("\n\n## cross-posting videos to TikTok/Instagram")
+        platforms = upload_post.upload_post_service.platforms
+        logger.info(f"\n\n## cross-posting videos to {', '.join(platforms)}")
+
+        youtube_extra = None
+        if any(p.startswith("youtube") for p in platforms):
+            metadata = llm.generate_social_metadata(
+                video_subject=params.video_subject,
+                video_script=video_script,
+                language=params.video_language or "",
+                platform="youtube_shorts",
+            )
+            youtube_extra = {
+                "youtube_title": metadata.get("title", params.video_subject),
+                "youtube_description": metadata.get("caption", ""),
+                "tags": metadata.get("hashtags", []),
+                "privacyStatus": upload_post.upload_post_service.youtube_privacy_status,
+                "containsSyntheticMedia": True,
+            }
+
         for video_path in final_video_paths:
             result = upload_post.cross_post_video(
                 video_path=video_path,
-                title=params.video_subject or "Check out this video! #shorts #viral"
+                title=params.video_subject or "Check out this video! #shorts #viral",
+                youtube_extra=youtube_extra,
             )
             cross_post_results.append(result)
             if result.get('success'):

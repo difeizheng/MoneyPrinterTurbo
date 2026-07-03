@@ -226,6 +226,57 @@ class TestLiteLLMProvider(unittest.TestCase):
         self.assertIn("Error:", result)
         self.assertIn("returned empty message", result)
 
+    def test_sanitize_error_message_redacts_url_credentials_and_query_tokens(self):
+        message = (
+            "request failed for "
+            "https://myuser:mypassword@proxy.example.com/v1/chat"
+            "?api_key=secret-key&token=secret-token&safe=value"
+        )
+
+        result = llm._sanitize_error_message(message)
+
+        self.assertIn("https://***:***@proxy.example.com", result)
+        self.assertIn("api_key=***", result)
+        self.assertIn("token=***", result)
+        self.assertIn("safe=value", result)
+        self.assertNotIn("myuser", result)
+        self.assertNotIn("mypassword", result)
+        self.assertNotIn("secret-key", result)
+        self.assertNotIn("secret-token", result)
+
+    def test_openai_provider_error_redacts_embedded_base_url_credentials(self):
+        """
+        自定义 OpenAI-compatible base_url 可能包含代理网关的 user:pass。
+        SDK 抛错时常会把 URL 带回异常信息，这里验证最终返回给 WebUI/API 的
+        `Error:` 文案不会泄露这些凭据。
+        """
+        config.app["llm_provider"] = "groq"
+        config.app["groq_api_key"] = "groq-key"
+        config.app["groq_model_name"] = "llama-3.3-70b-versatile"
+        config.app["groq_base_url"] = "https://myuser:mypassword@proxy.example.com/openai/v1"
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                raise RuntimeError(
+                    "connection failed: "
+                    "https://myuser:mypassword@proxy.example.com/openai/v1"
+                    "?access_token=secret-token"
+                )
+
+        fake_client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(completions=FakeCompletions())
+        )
+
+        with patch.object(llm, "OpenAI", return_value=fake_client):
+            result = llm._generate_response("test")
+
+        self.assertIn("Error:", result)
+        self.assertIn("https://***:***@proxy.example.com", result)
+        self.assertIn("access_token=***", result)
+        self.assertNotIn("myuser", result)
+        self.assertNotIn("mypassword", result)
+        self.assertNotIn("secret-token", result)
+
     def test_openai_provider_still_uses_existing_path(self):
         config.app["llm_provider"] = "openai"
         config.app["openai_api_key"] = ""
@@ -397,6 +448,90 @@ class TestLiteLLMProvider(unittest.TestCase):
             },
         )
         self.assertEqual(result, "helloaimlapi")
+
+    def test_evolink_provider_uses_openai_compatible_client(self):
+        """
+        EvoLink exposes OpenAI-compatible Chat Completions at direct.evolink.ai.
+        The provider should keep its own default endpoint and model instead of
+        requiring users to overload the generic OpenAI settings.
+        """
+        config.app["llm_provider"] = "evolink"
+        config.app["evolink_api_key"] = "evolink-key"
+        config.app["evolink_base_url"] = ""
+        config.app["evolink_model_name"] = ""
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                self.kwargs = kwargs
+                message = types.SimpleNamespace(content="hello\nevolink")
+                choice = types.SimpleNamespace(message=message)
+                return types.SimpleNamespace(choices=[choice])
+
+        fake_completions = FakeCompletions()
+        fake_client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(completions=fake_completions)
+        )
+
+        with (
+            patch.object(llm, "OpenAI", return_value=fake_client) as openai_client,
+            patch.object(llm, "ChatCompletion", types.SimpleNamespace),
+        ):
+            result = llm._generate_response("Say hello")
+
+        openai_client.assert_called_once_with(
+            api_key="evolink-key",
+            base_url="https://direct.evolink.ai/v1",
+        )
+        self.assertEqual(
+            fake_completions.kwargs,
+            {
+                "model": "gpt-5.5",
+                "messages": [{"role": "user", "content": "Say hello"}],
+            },
+        )
+        self.assertEqual(result, "helloevolink")
+
+    def test_volcengine_provider_uses_openai_compatible_client(self):
+        """
+        VolcEngine Ark 暴露 OpenAI-compatible Chat Completions。
+        这里用 fake OpenAI client 覆盖 provider 默认地址和默认模型，
+        避免真实网络或私有 API key 影响测试稳定性。
+        """
+        config.app["llm_provider"] = "volcengine"
+        config.app["volcengine_api_key"] = "volcengine-key"
+        config.app["volcengine_base_url"] = ""
+        config.app["volcengine_model_name"] = ""
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                self.kwargs = kwargs
+                message = types.SimpleNamespace(content="hello\nvolcengine")
+                choice = types.SimpleNamespace(message=message)
+                return types.SimpleNamespace(choices=[choice])
+
+        fake_completions = FakeCompletions()
+        fake_client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(completions=fake_completions)
+        )
+
+        with (
+            patch.object(llm, "OpenAI", return_value=fake_client) as openai_client,
+            patch.object(llm, "ChatCompletion", types.SimpleNamespace),
+        ):
+            result = llm._generate_response("Say hello")
+
+        openai_client.assert_called_once_with(
+            api_key="volcengine-key",
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+        )
+        self.assertEqual(
+            fake_completions.kwargs,
+            {
+                "model": "doubao-seed-2-1-turbo-260628",
+                "messages": [{"role": "user", "content": "Say hello"}],
+            },
+        )
+        self.assertEqual(result, "hellovolcengine")
 
     def test_grok_provider_still_uses_existing_path(self):
         config.app["llm_provider"] = "grok"

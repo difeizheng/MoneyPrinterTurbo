@@ -32,25 +32,16 @@
 <table align="center">
   <tr>
     <td align="center" width="160">
-      <a href="https://aihubmix.com/?aff=CEve"><strong>AIHubMix</strong></a>
+      <a href="https://www.volcengine.com/activity/ai618?utm_campaign=hw&utm_content=hw&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=MoneyPrinterTurbo"><img src="docs/sponsors/volcengine-logo.svg" alt="火山引擎" height="32"></a><br>
+      <a href="https://www.volcengine.com/activity/ai618?utm_campaign=hw&utm_content=hw&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=MoneyPrinterTurbo"><strong>火山引擎</strong></a>
     </td>
     <td align="left">
-      <sub>感谢 <a href="https://aihubmix.com/?aff=CEve">AIHubMix</a> 对本项目的赞助。AIHubMix 深度适配 OpenAI、Claude、Gemini、DeepSeek、智谱、千问等全球顶级最新模型，一站式快速接入 GPT-5.5、deepseek-v4-flash 等 700+ 模型（含多个免费模型），提供企业级生产稳定性保障。</sub>
-    </td>
-  </tr>
-
-  <tr>
-    <td align="center" width="160">
-      <a href="https://www.volcengine.com/activity/codingplan?utm_campaign=hw&utm_content=hw&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=MoneyPrinterTurbo"><img src="docs/sponsors/volcengine-logo.svg" alt="火山引擎" height="32"></a><br>
-      <a href="https://ai.volcengine.com/activity/agentplan?utm_campaign=hw&utm_content=hw&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=MoneyPrinterTurbo"><strong>方舟 Agent Plan</strong></a>
-    </td>
-    <td align="left">
-      <sub>感谢 <a href="https://ai.volcengine.com/activity/agentplan?utm_campaign=hw&utm_content=hw&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=MoneyPrinterTurbo">方舟 Agent Plan</a> 对本项目的赞助。模型自由，工具不限，最新支持 MiniMax-M3 与 GLM-5.1，受邀下单叠加 9.5 折！集合主流优秀国产编程模型，多生态兼容，无缝融入您的工具链，依托字节资源保障和工程能力，更大容量，更快、更稳、更丝滑！</sub>
+      <sub>感谢 <a href="https://www.volcengine.com/activity/ai618?utm_campaign=hw&utm_content=hw&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=MoneyPrinterTurbo">火山引擎</a> 赞助了本项目！方舟 Agent Plan 模型订阅套餐集成了包含 Doubao-Seed、Doubao-Seedance、Doubao-Seedream 等在内的字节跳动自研 SOTA 级模型，覆盖文本、代码、图像、视频等多模态任务。最新支持 MiniMax-M3、DeepSeek-V4 系列、GLM-5.2、Doubao-Seed-2.0 系列、Kimi-K2.7 等模型，工具不限。超全模态模型与 Harness 升级一步到位，深度支持 Agent 框架与 AI 编程工具。一次订阅，可以为不同任务切换合适的 AI 引擎。方舟 Agent Plan 限时 2.5 折订阅，<a href="https://www.volcengine.com/activity/ai618?utm_campaign=hw&utm_content=hw&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=MoneyPrinterTurbo">点击链接抢购</a>，名额有限，先到先得。</sub>
     </td>
   </tr>
   <tr>
     <td align="center" width="160">
-      <a href="https://www.ccsub.net/register?ref=VCVDAWWY"><img src="docs/sponsors/ccsub-logo.jpg" alt="CCSub" height="36"></a><br>
+      <a href="https://www.ccsub.net/register?ref=VCVDAWWY"><img src="docs/sponsors/ccsub-logo.png" alt="CCSub" height="36"></a><br>
       <a href="https://www.ccsub.net/register?ref=VCVDAWWY"><strong>CCSub</strong></a>
     </td>
     <td align="left">
@@ -59,11 +50,20 @@
   </tr>
   <tr>
     <td align="center" width="160">
+      <a href="https://www.compshare.cn/coding-plan?ytag=GPU_YY-git_MoneyPrinterTu"><img src="docs/sponsors/compshare-logo.png" alt="优云智算" height="34"></a><br>
+      <a href="https://www.compshare.cn/coding-plan?ytag=GPU_YY-git_MoneyPrinterTu"><strong>优云智算</strong></a>
+    </td>
+    <td align="left">
+      <sub>感谢 <a href="https://www.compshare.cn/coding-plan?ytag=GPU_YY-git_MoneyPrinterTu">优云智算</a> 赞助本项目！优云智算是 UCloud 旗下 AI 云平台，一站式提供国内外主流模型的 API 服务，一个 Key 即可调用所有模型。主打高性价比国产模型 CodingPlan 套餐（GLM5.2、Deepseek-v4等），同时提供官方转发的稳定海外模型通道，满足多场景开发需求。已兼容 Claude Code、Codex 等主流 AI 编程工具及通用 API 调用，支持企业级高并发、7×24 技术支持和自助开票。<a href="https://www.compshare.cn/coding-plan?ytag=GPU_YY-git_MoneyPrinterTu">点击注册</a>，最高可获得 ¥10 免费体验金。</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="160">
       <a href="https://reccloud.cn"><img src="docs/sponsors/reccloud-logo.svg" alt="录咖" height="36"></a><br>
       <a href="https://reccloud.cn"><strong>录咖 AI</strong></a>
     </td>
     <td align="left">
-      <sub>由于该项目的 <strong>部署</strong> 和 <strong>使用</strong>，对于一些小白用户来说，还是 <strong>有一定的门槛</strong>，在此特别感谢 <a href="https://reccloud.cn">录咖（AI智能 多媒体服务平台）</a> 网站基于该项目，提供的免费 <code>AI视频生成器</code> 服务，可以不用部署，直接在线使用，非常方便。中文版：<a href="https://reccloud.cn">https://reccloud.cn</a>，英文版：<a href="https://reccloud.com">https://reccloud.com</a></sub>
+      <sub>由于该项目的 <strong>部署</strong> 和 <strong>使用</strong>，对于一些小白用户来说，还是 <strong>有一定的门槛</strong>，在此特别感谢 <a href="https://reccloud.cn">录咖（AI智能 多媒体服务平台）</a> 网站基于该项目，提供的免费 <code>AI视频生成器</code> 服务，可以不用部署，直接在线使用，非常方便。</sub>
     </td>
   </tr>
   <tr>
@@ -91,8 +91,10 @@
 - [x] 支持 **字幕生成**，可以调整 `字体`、`位置`、`颜色`、`大小`，同时支持`字幕描边`设置
 - [x] 支持 **背景音乐**，随机或者指定音乐文件，可设置`背景音乐音量`
 - [x] 视频素材来源 **高清**，而且 **无版权**，也可以使用自己的 **本地素材**
-- [x] 支持多种素材源:**Pexels**、**Pixabay**、**Coverr**(免费高清/4K 素材库,使用须遵守 [Coverr 许可条款](https://coverr.co/license),以 16:9 横屏为主;在 [coverr.co/developers](https://coverr.co/developers?ctx=header_navigation) 注册即可,Demo 套餐 50 次/小时)
-- [x] 支持 **OpenAI**、**AIHubMix**、**AIML API**、**Moonshot**、**Azure**、**gpt4free**、**one-api**、**通义千问**、**Google Gemini**、**Ollama**、**DeepSeek**、**MiniMax**、 **文心一言**, **Pollinations**、**ModelScope** 等多种模型接入
+- [x] 支持多种素材源:**Pexels**、**Pixabay**、**Coverr**
+- [x] 可选接入 **TwelveLabs** 视频 AI:用 **Marengo** 多模态向量按主题语义重排素材关键词,用 **Pegasus** 对素材做内容 QA/描述([TwelveLabs API key](https://twelvelabs.io))
+- [x] 支持 **OpenAI**、**AIHubMix**、**AIML API**、**EvoLink**、**Moonshot**、**Azure**、**gpt4free**、**one-api**、**通义千问**、**Google Gemini**、**Ollama**、**DeepSeek**、**MiniMax**、 **文心一言**, **Pollinations**、**ModelScope** 等多种模型接入
+- [x] 支持一键 **跨平台发布**，生成完成后自动上传至 **TikTok**、**Instagram** 和 **YouTube Shorts**（需 [Upload-Post](https://upload-post.com) 账号；YouTube 发布时自动标注 AI 生成内容）；在 `config.toml` 中配置 `upload_post_platforms`、`upload_post_youtube_privacy_status` 等参数
 
 ## 视频演示 📺
 
@@ -188,7 +190,6 @@ git clone https://github.com/harry0703/MoneyPrinterTurbo.git
 - 将 `config.example.toml` 文件复制一份，命名为 `config.toml`
 - 按照 `config.toml` 文件中的说明，配置好 `pexels_api_keys` 和 `llm_provider`，并根据 llm_provider 对应的服务商，配置相关的
   API Key
-- 如果希望使用推荐的大模型平台，也可以将 `llm_provider` 设置为 `aihubmix`，并填写对应的 API Key。
 
 ### Docker部署 🐳
 

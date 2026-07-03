@@ -57,6 +57,69 @@ song_dir = os.path.join(root_dir, "resource", "songs")
 i18n_dir = os.path.join(root_dir, "webui", "i18n")
 config_file = os.path.join(root_dir, "webui", ".streamlit", "webui.toml")
 system_locale = utils.get_system_locale()
+DEFAULT_CHATTERBOX_BASE_URL = "http://127.0.0.1:4123/v1"
+DEFAULT_CHATTERBOX_MODEL = "chatterbox"
+DEFAULT_CHATTERBOX_VOICES = ["default-Female"]
+
+
+def _parse_chatterbox_voices(voices):
+    # Chatterbox 是自托管服务，音色列表由用户在 WebUI 中手动输入。
+    # 这里统一兼容 TOML 数组和输入框里的逗号分隔字符串，避免下拉框、
+    # 试听按钮和后续生成流程使用不同格式导致状态不一致。
+    if isinstance(voices, str):
+        return [v.strip() for v in voices.split(",") if v.strip()]
+    return [str(v).strip() for v in voices or [] if str(v).strip()]
+
+
+def _sync_chatterbox_config_from_session_state():
+    # Streamlit 的按钮会触发整页 rerun，而 Chatterbox 配置输入框位于
+    # “试听语音合成”按钮之后。如果试听时只读取 config.chatterbox，可能拿不到
+    # 用户刚在输入框里填入的 base_url/model/voices。先从 session_state 同步一次，
+    # 可以保证按钮逻辑和输入框显示逻辑使用同一份最新配置。
+    config.chatterbox["base_url"] = (
+        st.session_state.get(
+            "chatterbox_base_url_input",
+            config.chatterbox.get("base_url") or DEFAULT_CHATTERBOX_BASE_URL,
+        )
+        or ""
+    ).strip()
+    config.chatterbox["api_key"] = st.session_state.get(
+        "chatterbox_api_key_input", config.chatterbox.get("api_key", "")
+    )
+    config.chatterbox["model_id"] = (
+        st.session_state.get(
+            "chatterbox_model_input",
+            config.chatterbox.get("model_id") or DEFAULT_CHATTERBOX_MODEL,
+        )
+        or DEFAULT_CHATTERBOX_MODEL
+    ).strip()
+    config.chatterbox["voices"] = _parse_chatterbox_voices(
+        st.session_state.get(
+            "chatterbox_voices_input",
+            config.chatterbox.get("voices") or DEFAULT_CHATTERBOX_VOICES,
+        )
+    )
+
+
+def _detect_audio_mime(audio_file: str, audio_bytes: bytes) -> str:
+    # 有些 OpenAI-compatible TTS 服务，例如 travisvn/chatterbox-tts-api，
+    # 即使请求 response_format=mp3，也会返回 WAV 内容。WebUI 试听如果固定
+    # 使用 audio/mp3，浏览器可能无法播放，因此这里按文件头识别真实格式。
+    header = audio_bytes[:12]
+    if header.startswith(b"RIFF") and header[8:12] == b"WAVE":
+        return "audio/wav"
+    if header.startswith(b"ID3") or header[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        return "audio/mp3"
+    if header.startswith(b"OggS"):
+        return "audio/ogg"
+    ext = os.path.splitext(audio_file)[1].lower()
+    return {
+        ".wav": "audio/wav",
+        ".m4a": "audio/mp4",
+        ".aac": "audio/aac",
+        ".ogg": "audio/ogg",
+        ".flac": "audio/flac",
+    }.get(ext, "audio/mp3")
 
 
 if "video_subject" not in st.session_state:
@@ -278,17 +341,14 @@ if not config.app.get("hide_config", False):
 
         with middle_config_panel:
             st.write(tr("LLM Settings"))
-            # 下拉框需要展示“AIHubMix（推荐）”这类面向用户的文案，
-            # 但配置文件和后端逻辑必须继续使用稳定的小写 provider id。
-            # 因此这里显式维护 display label 和 provider id 的映射，避免
-            # UI 文案变化污染 `config.app["llm_provider"]`。
-            aihubmix_label = f"AIHubMix ({tr('Recommended')})"
-            if config.ui.get("language") == "zh":
-                aihubmix_label = "AIHubMix（推荐）"
+            # 下拉框展示文本和后端 provider id 分开维护，避免 UI 文案变化
+            # 污染 `config.app["llm_provider"]` 这类稳定配置值。
             llm_provider_options = [
                 ("OpenAI", "openai"),
-                (aihubmix_label, "aihubmix"),
+                ("AIHubMix", "aihubmix"),
                 ("AIML API", "aimlapi"),
+                ("EvoLink", "evolink"),
+                ("VolcEngine", "volcengine"),
                 ("Moonshot", "moonshot"),
                 ("Azure", "azure"),
                 ("Qwen", "qwen"),
@@ -307,24 +367,33 @@ if not config.app.get("hide_config", False):
                 ("Pollinations", "pollinations"),
                 ("LiteLLM", "litellm"),
             ]
-            llm_provider_labels = [label for label, _ in llm_provider_options]
-            llm_provider_values = {
-                label: provider_id for label, provider_id in llm_provider_options
+            llm_provider_ids = [provider_id for _, provider_id in llm_provider_options]
+            llm_provider_labels = {
+                provider_id: label for label, provider_id in llm_provider_options
             }
             saved_llm_provider = config.app.get("llm_provider", "openai").lower()
-            saved_llm_provider_index = 0
-            for i, (_, provider_id) in enumerate(llm_provider_options):
-                if provider_id == saved_llm_provider:
-                    saved_llm_provider_index = i
-                    break
+            if saved_llm_provider not in llm_provider_ids:
+                saved_llm_provider = "openai"
 
-            llm_provider_label = st.selectbox(
+            # Streamlit 会把没有 key 的 selectbox 视为一个由 label/options/index
+            # 共同决定的临时控件。如果每次选择后都根据 config.app 重新计算 index，
+            # 用户第一次切换 provider 后控件可能被重建，表现为“必须选择两次才生效”。
+            # 这里用稳定的 provider id 作为真实选项，并给控件固定 key；展示文案只
+            # 通过 format_func 转换，避免 UI 文案变化影响状态。
+            if st.session_state.get("llm_provider_select") not in (
+                None,
+                *llm_provider_ids,
+            ):
+                del st.session_state["llm_provider_select"]
+
+            llm_provider = st.selectbox(
                 tr("LLM Provider"),
-                options=llm_provider_labels,
-                index=saved_llm_provider_index,
+                options=llm_provider_ids,
+                index=llm_provider_ids.index(saved_llm_provider),
+                format_func=lambda provider_id: llm_provider_labels[provider_id],
+                key="llm_provider_select",
             )
             llm_helper = st.container()
-            llm_provider = llm_provider_values[llm_provider_label]
             config.app["llm_provider"] = llm_provider
 
             llm_api_key = config.app.get(f"{llm_provider}_api_key", "")
@@ -375,15 +444,9 @@ if not config.app.get("hide_config", False):
                 with llm_helper:
                     tips = """
                             ##### AIHubMix 配置说明
-                            - **注册链接**: [点击注册 AIHubMix](https://aihubmix.com/?aff=CEve)
+                            - **API Key**: 在 AIHubMix 控制台创建 API Key
                             - **Base Url**: 预填 https://aihubmix.com/v1
-                            - **推荐模型**: 默认 gpt-5.4-mini，也可以填写 AIHubMix 支持的免费模型或其它模型 ID
-
-                            推荐理由：
-                            - **模型全**: Claude、GPT、Gemini、Grok、DeepSeek、通义等 700+ 模型一站覆盖
-                            - **稳定**: 无限并发，永远在线，集群部署于谷歌云，长期为众多知名应用提供高并发服务
-                            - **能力完整**: 文本、图片生成、视频生成、TTS、STT、向量嵌入、Rerank，多模态场景全搞定
-                            - **计费透明**: 按量付费，无会员无包月，免费模型可使用
+                            - **Model Name**: 默认 gpt-5.4-mini，也可以填写 AIHubMix 支持的其它模型 ID
                             """
 
             if llm_provider == "aimlapi":
@@ -397,6 +460,33 @@ if not config.app.get("hide_config", False):
                             - **API Key**: create one at https://aimlapi.com/app/keys
                             - **Base Url**: https://api.aimlapi.com/v1
                             - **Model Name**: for example `openai/gpt-4o-mini`, `openai/gpt-4o`, `anthropic/claude-sonnet-4.5`, or `google/gemini-3-flash-preview`
+                            """
+
+            if llm_provider == "evolink":
+                if not llm_model_name:
+                    llm_model_name = "gpt-5.5"
+                if not llm_base_url:
+                    llm_base_url = "https://direct.evolink.ai/v1"
+                with llm_helper:
+                    tips = """
+                            ##### EvoLink 配置说明
+                            - **API Key**: [点击到官网申请](https://evolink.ai/dashboard/keys)
+                            - **Base Url**: 默认 https://direct.evolink.ai/v1
+                            - **Model Name**: 默认 gpt-5.5，也可以填写 EvoLink 支持的其它模型 ID
+                            """
+
+            if llm_provider == "volcengine":
+                if not llm_model_name:
+                    llm_model_name = "doubao-seed-2-1-turbo-260628"
+                if not llm_base_url:
+                    llm_base_url = "https://ark.cn-beijing.volces.com/api/v3"
+                with llm_helper:
+                    tips = """
+                            ##### VolcEngine Ark 配置说明
+                            - **注册链接**: [点击注册 火山引擎](https://www.volcengine.com/activity/ai618?utm_campaign=hw&utm_content=hw&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=MoneyPrinterTurbo)
+                            - **API Key**: 在火山引擎方舟控制台创建 API Key
+                            - **Base Url**: 默认 https://ark.cn-beijing.volces.com/api/v3
+                            - **Model Name**: 填写 Ark 控制台已开通的模型 ID，例如 doubao-seed-2-1-turbo-260628
                             """
 
             if llm_provider == "moonshot":
@@ -566,13 +656,6 @@ if not config.app.get("hide_config", False):
                             """
 
             if tips and config.ui["language"] == "zh":
-                # AIHubMix 自身就是 OpenAI-compatible 聚合平台；用户主动选择
-                # 该 provider 时，再显示 DeepSeek/Moonshot 的通用推荐会造成
-                # 信息干扰，也不利于保持合作入口的轻量、清晰。
-                if llm_provider != "aihubmix":
-                    st.warning(
-                        "中国用户建议使用 **DeepSeek** 或 **Moonshot** 作为大模型提供商\n- 国内可直接访问，不需要VPN \n- 注册就送额度，基本够用"
-                    )
                 st.info(tips)
 
             st_llm_api_key = st.text_input(
@@ -947,6 +1030,8 @@ with middle_panel:
             ("siliconflow", "SiliconFlow TTS"),
             ("gemini-tts", "Google Gemini TTS"),
             ("mimo-tts", "Xiaomi MiMo TTS"),
+            ("elevenlabs", "ElevenLabs TTS"),
+            ("chatterbox", "Chatterbox TTS"),
         ]
 
         # 获取保存的TTS服务器，默认为v1
@@ -983,6 +1068,26 @@ with middle_panel:
         elif selected_tts_server == "mimo-tts":
             # 获取 Xiaomi MiMo TTS 的预置音色列表
             filtered_voices = voice.get_mimo_voices()
+        elif selected_tts_server == "elevenlabs":
+            # Read from session_state first so the API key is available before
+            # the Play Voice button runs (which is earlier in the script than
+            # the API key text_input widget).
+            saved_elevenlabs_api_key = st.session_state.get(
+                "elevenlabs_api_key_input",
+                config.elevenlabs.get("api_key", ""),
+            )
+            if saved_elevenlabs_api_key:
+                config.elevenlabs["api_key"] = saved_elevenlabs_api_key
+            cache_key = f"elevenlabs_voices_{saved_elevenlabs_api_key}"
+            if cache_key not in st.session_state:
+                st.session_state[cache_key] = voice.get_elevenlabs_voices(
+                    saved_elevenlabs_api_key
+                )
+            filtered_voices = st.session_state[cache_key]
+        elif selected_tts_server == "chatterbox":
+            # 自托管 Chatterbox 服务的预置音色（来自 [chatterbox] voices 配置）
+            _sync_chatterbox_config_from_session_state()
+            filtered_voices = voice.get_chatterbox_voices()
         else:
             # 获取Azure的声音列表
             all_voices = voice.get_all_azure_voices(filter_locals=None)
@@ -1001,12 +1106,19 @@ with middle_panel:
         if selected_tts_server == voice.NO_VOICE_NAME:
             friendly_names = {voice.NO_VOICE_NAME: tr("No Voice")}
         else:
-            friendly_names = {
-                v: v.replace("Female", tr("Female"))
-                .replace("Male", tr("Male"))
-                .replace("Neural", "")
-                for v in filtered_voices
-            }
+            def _friendly(v):
+                if voice.is_elevenlabs_voice(v):
+                    parts = v.split(":", 2)
+                    return parts[2] if len(parts) >= 3 else v
+                if voice.is_chatterbox_voice(v):
+                    name = v.split(":", 1)[1] if ":" in v else v
+                    return name.replace("-Female", "").replace("-Male", "")
+                return (
+                    v.replace("Female", tr("Female"))
+                    .replace("Male", tr("Male"))
+                    .replace("Neural", "")
+                )
+            friendly_names = {v: _friendly(v) for v in filtered_voices}
 
         saved_voice_name = config.ui.get("voice_name", "")
         saved_voice_name_index = 0
@@ -1047,6 +1159,7 @@ with middle_panel:
                     "No voices available for the selected TTS server. Please select another server."
                 )
             )
+            voice_name = ""
             params.voice_name = ""
             config.ui["voice_name"] = ""
 
@@ -1056,11 +1169,24 @@ with middle_panel:
             and selected_tts_server != voice.NO_VOICE_NAME
             and st.button(tr("Play Voice"))
         ):
+            if selected_tts_server == "chatterbox":
+                _sync_chatterbox_config_from_session_state()
             play_content = params.video_subject
             if not play_content:
                 play_content = params.video_script
             if not play_content:
-                play_content = tr("Voice Example")
+                # For ElevenLabs voices, detect language from the display name
+                # so the test text matches the voice's language.
+                if voice.is_elevenlabs_voice(voice_name):
+                    parts = voice_name.split(":", 2)
+                    display = parts[2] if len(parts) >= 3 else ""
+                    _vi_chars = set("àáâãèéêìíòóôõùúýăđơưÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝĂĐƠƯ")
+                    if any(c in _vi_chars for c in display):
+                        play_content = "Xin chào, đây là đoạn âm thanh thử nghiệm giọng nói."
+                    else:
+                        play_content = tr("Voice Example")
+                else:
+                    play_content = tr("Voice Example")
             with st.spinner(tr("Synthesizing Voice")):
                 temp_dir = utils.storage_dir("temp", create=True)
                 audio_file = os.path.join(temp_dir, f"tmp-voice-{str(uuid4())}.mp3")
@@ -1083,7 +1209,15 @@ with middle_panel:
                     )
 
                 if sub_maker and os.path.exists(audio_file):
-                    st.audio(audio_file, format="audio/mp3")
+                    with open(audio_file, "rb") as f:
+                        audio_bytes = f.read()
+                    if audio_bytes:
+                        st.audio(
+                            audio_bytes,
+                            format=_detect_audio_mime(audio_file, audio_bytes),
+                        )
+                    else:
+                        logger.error(f"voice preview audio file is empty: {audio_file}")
                     if os.path.exists(audio_file):
                         os.remove(audio_file)
 
@@ -1158,6 +1292,105 @@ with middle_panel:
             )
 
             config.app["mimo_api_key"] = mimo_api_key
+
+        # ElevenLabs API key section
+        if selected_tts_server == "elevenlabs" or (
+            voice_name and voice.is_elevenlabs_voice(voice_name)
+        ):
+            saved_elevenlabs_api_key = config.elevenlabs.get("api_key", "")
+
+            elevenlabs_api_key = st.text_input(
+                tr("ElevenLabs API Key"),
+                value=saved_elevenlabs_api_key,
+                type="password",
+                key="elevenlabs_api_key_input",
+            )
+
+            _elevenlabs_models = [
+                "eleven_multilingual_v2",
+                "eleven_flash_v2_5",
+                "eleven_v3",
+            ]
+            saved_elevenlabs_model = config.elevenlabs.get(
+                "model_id", "eleven_multilingual_v2"
+            )
+            if saved_elevenlabs_model not in _elevenlabs_models:
+                saved_elevenlabs_model = "eleven_multilingual_v2"
+            elevenlabs_model = st.selectbox(
+                tr("ElevenLabs Model"),
+                options=_elevenlabs_models,
+                index=_elevenlabs_models.index(saved_elevenlabs_model),
+                key="elevenlabs_model_select",
+            )
+            config.elevenlabs["model_id"] = elevenlabs_model
+
+            st.info(
+                "ElevenLabs TTS Settings:\n"
+                "- Get your API key at https://elevenlabs.io/app/settings/api-keys\n"
+                "- Mark voices as ★ Favorite in the ElevenLabs voice library to make them appear here"
+            )
+
+            if elevenlabs_api_key != saved_elevenlabs_api_key:
+                for k in list(st.session_state.keys()):
+                    if k.startswith("elevenlabs_voices_"):
+                        del st.session_state[k]
+
+            config.elevenlabs["api_key"] = elevenlabs_api_key
+
+        # Chatterbox API settings section (self-hosted, OpenAI-compatible)
+        if selected_tts_server == "chatterbox" or (
+            voice_name and voice.is_chatterbox_voice(voice_name)
+        ):
+            chatterbox_base_url = st.text_input(
+                tr("Chatterbox Base URL"),
+                value=config.chatterbox.get("base_url") or DEFAULT_CHATTERBOX_BASE_URL,
+                key="chatterbox_base_url_input",
+                placeholder="http://localhost:4123/v1",
+            )
+            config.chatterbox["base_url"] = (chatterbox_base_url or "").strip()
+
+            chatterbox_api_key = st.text_input(
+                tr("Chatterbox API Key"),
+                value=config.chatterbox.get("api_key", ""),
+                type="password",
+                key="chatterbox_api_key_input",
+            )
+            config.chatterbox["api_key"] = chatterbox_api_key
+
+            chatterbox_model = st.text_input(
+                tr("Chatterbox Model"),
+                value=config.chatterbox.get("model_id") or DEFAULT_CHATTERBOX_MODEL,
+                key="chatterbox_model_input",
+            )
+            config.chatterbox["model_id"] = (
+                chatterbox_model or DEFAULT_CHATTERBOX_MODEL
+            ).strip()
+
+            _saved_chatterbox_voices = (
+                _parse_chatterbox_voices(config.chatterbox.get("voices"))
+                or DEFAULT_CHATTERBOX_VOICES
+            )
+            if isinstance(_saved_chatterbox_voices, list):
+                _saved_chatterbox_voices = ", ".join(_saved_chatterbox_voices)
+            chatterbox_voices = st.text_input(
+                tr("Chatterbox Voices"),
+                value=str(_saved_chatterbox_voices or ""),
+                key="chatterbox_voices_input",
+                placeholder="default-Female, narrator-Male",
+            )
+            config.chatterbox["voices"] = _parse_chatterbox_voices(chatterbox_voices)
+
+            st.info(
+                "Chatterbox TTS Settings (self-hosted):\n"
+                "- Run an OpenAI-compatible Chatterbox server (e.g. "
+                "devnen/Chatterbox-TTS-Server or travisvn/chatterbox-tts-api) and "
+                "set Base URL to its /v1 endpoint\n"
+                "- Voices is a comma-separated list of voice names your server "
+                "exposes; add a -Female or -Male suffix only to label the gender "
+                "in this dropdown\n"
+                "- Speech Volume is not applied for Chatterbox (the OpenAI "
+                "/audio/speech API has no volume field); use Speech Rate instead"
+            )
 
         params.voice_volume = st.selectbox(
             tr("Speech Volume"),

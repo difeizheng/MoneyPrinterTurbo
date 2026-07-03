@@ -504,6 +504,127 @@ class TestVoiceService(unittest.TestCase):
         self.assertEqual(getattr(sub_maker, "subs", []), ["小米语音合成测试", "第二句话"])
         self.assertEqual(len(getattr(sub_maker, "offset", [])), 2)
 
+    def test_chatterbox_voice_helpers(self):
+        """is_chatterbox_voice / get_chatterbox_voices basics and normalisation."""
+        self.assertTrue(vs.is_chatterbox_voice("chatterbox:default-Female"))
+        self.assertFalse(vs.is_chatterbox_voice("elevenlabs:abc:Rachel"))
+        self.assertFalse(vs.is_chatterbox_voice(""))
+        self.assertFalse(vs.is_chatterbox_voice(None))
+
+        # list entries are normalised to the chatterbox:<name> dispatcher format,
+        # and entries that are already prefixed are left untouched
+        with patch.object(
+            vs.config,
+            "chatterbox",
+            {"voices": ["narrator-Male", "chatterbox:host"]},
+        ):
+            self.assertEqual(
+                vs.get_chatterbox_voices(),
+                ["chatterbox:narrator-Male", "chatterbox:host"],
+            )
+
+        # a comma-separated string is also accepted (TOML-friendly)
+        with patch.object(vs.config, "chatterbox", {"voices": "alpha, beta ,"}):
+            self.assertEqual(
+                vs.get_chatterbox_voices(),
+                ["chatterbox:alpha", "chatterbox:beta"],
+            )
+
+        # with nothing configured the dropdown still gets a usable default
+        with patch.object(vs.config, "chatterbox", {}):
+            self.assertEqual(vs.get_chatterbox_voices(), ["chatterbox:default-Female"])
+
+    def test_chatterbox_tts_posts_to_openai_compatible_endpoint(self):
+        """Success path: POST /audio/speech, write audio, return legacy SubMaker."""
+
+        class _FakeResponse:
+            status_code = 200
+            content = b"RIFF-fake-wav"
+            text = ""
+
+        class _FakeClip:
+            duration = 3.5
+
+            def close(self):
+                pass
+
+        captured = {}
+
+        def _fake_post(url, json=None, headers=None, timeout=None):
+            captured["url"] = url
+            captured["json"] = json
+            captured["headers"] = headers
+            return _FakeResponse()
+
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.object(
+            vs.config,
+            "chatterbox",
+            {
+                "base_url": "http://localhost:4123/v1/",
+                "api_key": "secret",
+                "model_id": "chatterbox",
+            },
+        ), patch.object(
+            vs.requests, "post", side_effect=_fake_post
+        ) as post, patch.object(
+            vs, "AudioFileClip", return_value=_FakeClip()
+        ):
+            voice_file = str(Path(tmp_dir) / "chatterbox.mp3")
+            sub_maker = vs.chatterbox_tts(
+                text="Hello world. Second sentence.",
+                voice="default",
+                voice_file=voice_file,
+                voice_rate=1.2,
+                voice_volume=1.0,
+            )
+            generated_audio = Path(voice_file).read_bytes()
+
+        post.assert_called_once()
+        # trailing slash on base_url is stripped before appending /audio/speech
+        self.assertEqual(captured["url"], "http://localhost:4123/v1/audio/speech")
+        self.assertEqual(captured["json"]["model"], "chatterbox")
+        self.assertEqual(captured["json"]["voice"], "default")
+        self.assertEqual(captured["json"]["input"], "Hello world. Second sentence.")
+        self.assertAlmostEqual(captured["json"]["speed"], 1.2)
+        # api_key is forwarded as a bearer token
+        self.assertEqual(captured["headers"].get("Authorization"), "Bearer secret")
+        # volume is intentionally not part of the OpenAI speech payload
+        self.assertNotIn("volume", captured["json"])
+        self.assertEqual(generated_audio, b"RIFF-fake-wav")
+        self.assertIsNotNone(sub_maker)
+        self.assertTrue(getattr(sub_maker, "subs", []))
+
+    def test_chatterbox_tts_requires_base_url(self):
+        """Missing base_url short-circuits without any network call."""
+        with patch.object(
+            vs.config, "chatterbox", {"base_url": ""}
+        ), patch.object(vs.requests, "post") as post:
+            result = vs.chatterbox_tts(
+                text="hi", voice="default", voice_file="unused.mp3"
+            )
+        self.assertIsNone(result)
+        post.assert_not_called()
+
+    def test_chatterbox_tts_returns_none_on_http_error(self):
+        """A non-200 response is retried up to 3 times, then fails to None."""
+
+        class _FakeResponse:
+            status_code = 500
+            content = b""
+            text = "boom"
+
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.object(
+            vs.config, "chatterbox", {"base_url": "http://localhost:4123/v1"}
+        ), patch.object(
+            vs.requests, "post", return_value=_FakeResponse()
+        ) as post:
+            voice_file = str(Path(tmp_dir) / "chatterbox.mp3")
+            result = vs.chatterbox_tts(
+                text="hi", voice="default", voice_file=voice_file
+            )
+        self.assertIsNone(result)
+        self.assertEqual(post.call_count, 3)
+
     def test_generate_subtitle_keeps_edge_provider_for_gemini_legacy_submaker(self):
         """
         验证 Gemini TTS 返回的 legacy 字幕结构在 edge provider 下可以直接产出
@@ -732,6 +853,103 @@ class TestVoiceService(unittest.TestCase):
         self.assertEqual(vs.convert_rate_to_percent(0.997), "+0%")
         self.assertEqual(vs.convert_rate_to_percent(1.5), "+50%")
         self.assertEqual(vs.convert_rate_to_percent(0.8), "-20%")
+
+    def test_convert_rate_to_percent_invalid_values_default_to_normal(self):
+        # API 和批处理脚本可能把空语速传成 0、None 或空字符串；这些都不应让
+        # edge-tts 收到 -100% 或触发异常，而是按正常语速处理。
+        self.assertEqual(vs.convert_rate_to_percent(0), "+0%")
+        self.assertEqual(vs.convert_rate_to_percent(0.0), "+0%")
+        self.assertEqual(vs.convert_rate_to_percent(None), "+0%")
+        self.assertEqual(vs.convert_rate_to_percent(""), "+0%")
+
+
+class TestElevenLabsVoice(unittest.TestCase):
+
+    def test_is_elevenlabs_voice_true(self):
+        self.assertTrue(vs.is_elevenlabs_voice("elevenlabs:pNInz6obpgDQGcFmaJgB:Adam"))
+
+    def test_is_elevenlabs_voice_false_azure(self):
+        self.assertFalse(vs.is_elevenlabs_voice("zh-CN-XiaoxiaoNeural-Female"))
+
+    def test_is_elevenlabs_voice_false_siliconflow(self):
+        self.assertFalse(vs.is_elevenlabs_voice("siliconflow:model:voice-Male"))
+
+    def test_is_elevenlabs_voice_empty(self):
+        self.assertFalse(vs.is_elevenlabs_voice(""))
+
+    def test_is_elevenlabs_voice_none(self):
+        self.assertFalse(vs.is_elevenlabs_voice(None))
+
+    def test_get_elevenlabs_voices_empty_api_key(self):
+        result = vs.get_elevenlabs_voices("")
+        self.assertEqual(result, [])
+
+    @patch("app.services.voice.requests.get")
+    def test_get_elevenlabs_voices_success(self, mock_get):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "voices": [
+                {"voice_id": "abc123", "name": "Adam"},
+                {"voice_id": "def456", "name": "Rachel"},
+            ]
+        }
+        result = vs.get_elevenlabs_voices("fake-api-key")
+        self.assertEqual(result, [
+            "elevenlabs:abc123:Adam",
+            "elevenlabs:def456:Rachel",
+        ])
+        mock_get.assert_called_once()
+        call_kwargs = mock_get.call_args
+        self.assertIn("xi-api-key", call_kwargs.kwargs.get("headers", {}))
+
+    @patch("app.services.voice.requests.get")
+    def test_get_elevenlabs_voices_http_error(self, mock_get):
+        mock_get.return_value.status_code = 401
+        mock_get.return_value.text = "Unauthorized"
+        result = vs.get_elevenlabs_voices("bad-key")
+        self.assertEqual(result, [])
+
+    @patch("app.services.voice.requests.get")
+    def test_get_elevenlabs_voices_network_error(self, mock_get):
+        import requests as req_lib
+        mock_get.side_effect = req_lib.exceptions.ConnectionError("timeout")
+        result = vs.get_elevenlabs_voices("fake-key")
+        self.assertEqual(result, [])
+
+    @patch("app.services.voice.requests.post")
+    @patch("app.services.voice.AudioFileClip")
+    @patch("app.services.voice.config")
+    def test_elevenlabs_tts_success(self, mock_config, mock_clip_cls, mock_post):
+        mock_config.elevenlabs.get.return_value = "fake-api-key"
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.content = b"fake-mp3-bytes"
+        mock_clip = mock_clip_cls.return_value.__enter__.return_value
+        mock_clip_cls.return_value.duration = 3.0
+        mock_clip_cls.return_value.close = lambda: None
+
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            out_path = f.name
+
+        try:
+            result = vs.elevenlabs_tts("Hello world", "abc123", out_path)
+            self.assertIsNotNone(result)
+            self.assertTrue(hasattr(result, "subs"))
+            self.assertTrue(hasattr(result, "offset"))
+        finally:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+
+    @patch("app.services.voice.config")
+    def test_elevenlabs_tts_no_api_key(self, mock_config):
+        mock_config.elevenlabs.get.return_value = ""
+        result = vs.elevenlabs_tts("Hello", "abc123", "/tmp/test.mp3")
+        self.assertIsNone(result)
+
+    @patch("app.services.voice.config")
+    def test_elevenlabs_tts_empty_text(self, mock_config):
+        mock_config.elevenlabs.get.return_value = "fake-key"
+        result = vs.elevenlabs_tts("  ", "abc123", "/tmp/test.mp3")
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":

@@ -19,6 +19,11 @@ MAX_SCRIPT_PROMPT_LENGTH = 2000
 MAX_SCRIPT_SYSTEM_PROMPT_LENGTH = 8000
 _THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
 _UNCLOSED_THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*$", re.IGNORECASE | re.DOTALL)
+_URL_USERINFO_RE = re.compile(r"((?:https?|wss?)://)([^/\s?#@]*:[^/\s?#@]*@)", re.IGNORECASE)
+_SENSITIVE_QUERY_RE = re.compile(
+    r"([?&](?:api[_-]?key|access[_-]?token|token|key|secret|password)=)([^&#\s]+)",
+    re.IGNORECASE,
+)
 
 DEFAULT_SCRIPT_SYSTEM_PROMPT = """
 # Role: Video Script Generator
@@ -59,6 +64,21 @@ def _normalize_text_response(content, llm_provider: str) -> str:
         raise ValueError(f"[{llm_provider}] returned empty text content")
 
     return content.replace("\n", "")
+
+
+def _sanitize_error_message(error: object) -> str:
+    """
+    清理返回给 WebUI/API 的错误信息，避免自定义 base_url 中的凭据泄露。
+
+    一些 OpenAI-compatible SDK 会把请求 URL 原样拼进异常信息。如果用户为了
+    代理网关配置了 `https://user:pass@example.com/v1`，直接返回 `str(e)`
+    就会把密码暴露给页面、API 调用方或后续日志。这里仅处理错误文案，不改变
+    实际请求地址，避免影响正常调用链路。
+    """
+    message = str(error)
+    message = _URL_USERINFO_RE.sub(r"\1***:***@", message)
+    message = _SENSITIVE_QUERY_RE.sub(r"\1***", message)
+    return message
 
 
 def _extract_chat_completion_text(response, llm_provider: str) -> str:
@@ -240,6 +260,14 @@ def _generate_response(prompt: str) -> str:
                 base_url = config.app.get("minimax_base_url", "")
                 if not base_url:
                     base_url = "https://api.minimax.io/v1"
+            elif llm_provider == "evolink":
+                api_key = config.app.get("evolink_api_key")
+                model_name = config.app.get("evolink_model_name")
+                base_url = config.app.get("evolink_base_url", "")
+                if not base_url:
+                    base_url = "https://direct.evolink.ai/v1"
+                if not model_name:
+                    model_name = "gpt-5.5"
             elif llm_provider == "mimo":
                 api_key = config.app.get("mimo_api_key")
                 model_name = config.app.get("mimo_model_name")
@@ -252,6 +280,17 @@ def _generate_response(prompt: str) -> str:
                     base_url = "https://api.xiaomimimo.com/v1"
                 if not model_name:
                     model_name = "mimo-v2.5-pro"
+            elif llm_provider == "volcengine":
+                api_key = config.app.get("volcengine_api_key")
+                model_name = config.app.get("volcengine_model_name")
+                base_url = config.app.get("volcengine_base_url", "")
+                # 火山引擎方舟提供 OpenAI-compatible Chat Completions 接口。
+                # 独立 provider 可以让用户直接选择 VolcEngine，而不用把 Ark
+                # 的 key/base_url 混到通用 OpenAI 配置里，后续维护也更清晰。
+                if not base_url:
+                    base_url = "https://ark.cn-beijing.volces.com/api/v3"
+                if not model_name:
+                    model_name = "doubao-seed-2-1-turbo-260628"
             elif llm_provider == "deepseek":
                 api_key = config.app.get("deepseek_api_key")
                 model_name = config.app.get("deepseek_model_name")
@@ -557,7 +596,7 @@ def _generate_response(prompt: str) -> str:
 
         return _normalize_text_response(content, llm_provider)
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Error: {_sanitize_error_message(e)}"
 
 
 def _limit_script_text(text: str | None, max_length: int, field_name: str) -> str:
