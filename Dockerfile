@@ -27,7 +27,10 @@ RUN if [ "$DOCKER_BUILD_MIRROR" = "china" ]; then \
             apt-get update && apt-get install -y --no-install-recommends \
                 git \
                 imagemagick \
-                ffmpeg && break || \
+                ffmpeg \
+                libreoffice-impress \
+                poppler-utils \
+                fonts-noto-cjk && break || \
             echo "Attempt $i failed, retrying..."; \
             if [ "$DOCKER_BUILD_MIRROR" = "china" ] && [ $i -eq 3 ]; then \
                 echo "Aliyun mirror failed, switching to Tsinghua mirror"; \
@@ -37,7 +40,10 @@ RUN if [ "$DOCKER_BUILD_MIRROR" = "china" ]; then \
                     apt-get update && apt-get install -y --no-install-recommends \
                         git \
                         imagemagick \
-                        ffmpeg || \
+                        ffmpeg \
+                        libreoffice-impress \
+                        poppler-utils \
+                        fonts-noto-cjk || \
                     ( \
                         echo "Tsinghua mirror failed, switching to default Debian mirror"; \
                         sed -i 's/mirrors.tuna.tsinghua.edu.cn/deb.debian.org/g' /etc/apt/sources.list && \
@@ -45,7 +51,10 @@ RUN if [ "$DOCKER_BUILD_MIRROR" = "china" ]; then \
                         apt-get update && apt-get install -y --no-install-recommends \
                             git \
                             imagemagick \
-                            ffmpeg; \
+                            ffmpeg \
+                            libreoffice-impress \
+                            poppler-utils \
+                            fonts-noto-cjk; \
                     ); \
                 ); \
             fi; \
