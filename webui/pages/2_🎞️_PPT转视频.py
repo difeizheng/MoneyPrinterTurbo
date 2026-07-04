@@ -9,7 +9,8 @@ PPT 转视频页（Streamlit 传统 multipage）。
   3. 用户在页面上编辑每页文案
   4. 复用 app.services.task.start 的进程内生成管线出片
 
-视觉模型 key 只存会话，不写 config.toml，避免往磁盘写密钥。
+视觉模型 key/base/model 可点「保存」写回 config.toml（config.toml 在 .gitignore
+中，仅本地保留，不入库）。生成失败时会透出后端 loguru 捕获到的 ERROR 原因。
 """
 
 import base64
@@ -33,12 +34,11 @@ if root_dir not in sys.path:
 
 from app.config import config  # noqa: E402
 from app.models.schema import (  # noqa: E402
-    MaterialInfo,
     VideoAspect,
     VideoConcatMode,
     VideoParams,
 )
-from app.services import task as tm  # noqa: E402
+from app.services import ppt_video  # noqa: E402
 from app.utils import utils  # noqa: E402
 from app.utils import pptx_converter  # noqa: E402
 
@@ -75,9 +75,14 @@ NARRATION_PROMPT = """你是一个专业的投标方案讲解员。请根据这�
 6. 如果是文字列表，用流畅的语句串联要点
 7. 只返回旁白文案本身，不要加任何格式标记"""
 
-# 视觉模型默认配置（仅会话内，不回写磁盘）
+# 视觉模型默认配置（config.toml 未配置时的兜底值）
 DEFAULT_VL_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEFAULT_VL_MODEL = "qwen-vl-max"
+
+# config.toml 中的持久化键名
+_CFG_VL_KEY = "qwen_vl_api_key"
+_CFG_VL_BASE = "qwen_vl_base_url"
+_CFG_VL_MODEL = "qwen_vl_model"
 
 # 配音选项（edge_tts，API 格式带性别后缀，voice.parse_voice_name 会剥离）
 VOICE_OPTIONS = {
@@ -195,17 +200,21 @@ with lang_col:
 
 st.caption(tr("PPT to Video Help"))
 
-# ===================== 视觉模型配置（仅会话） =====================
+# ===================== 视觉模型配置（可落盘到 config.toml） =====================
 
-# seed 一次默认值，之后用 widget key 读写
+# seed 默认值：优先读 config.toml，缺省再用代码常量
 if "ppt_vl_key" not in st.session_state:
     st.session_state["ppt_vl_key"] = (
-        config.app.get("qwen_vl_api_key") or config.app.get("openai_api_key") or ""
+        config.app.get(_CFG_VL_KEY) or config.app.get("openai_api_key") or ""
     )
 if "ppt_vl_base" not in st.session_state:
-    st.session_state["ppt_vl_base"] = DEFAULT_VL_BASE_URL
+    st.session_state["ppt_vl_base"] = (
+        config.app.get(_CFG_VL_BASE) or DEFAULT_VL_BASE_URL
+    )
 if "ppt_vl_model" not in st.session_state:
-    st.session_state["ppt_vl_model"] = DEFAULT_VL_MODEL
+    st.session_state["ppt_vl_model"] = (
+        config.app.get(_CFG_VL_MODEL) or DEFAULT_VL_MODEL
+    )
 
 with st.expander(tr("Vision Model Settings"), expanded=False):
     st.text_input(
@@ -216,6 +225,42 @@ with st.expander(tr("Vision Model Settings"), expanded=False):
     )
     st.text_input(tr("Vision Base URL"), key="ppt_vl_base")
     st.text_input(tr("Vision Model Name"), key="ppt_vl_model")
+    if st.button(tr("Save Vision Config"), type="primary"):
+        key_val = (st.session_state.get("ppt_vl_key") or "").strip()
+        base_val = (
+            (st.session_state.get("ppt_vl_base") or "").strip() or DEFAULT_VL_BASE_URL
+        )
+        model_val = (
+            (st.session_state.get("ppt_vl_model") or "").strip() or DEFAULT_VL_MODEL
+        )
+        # 关键：不能直接调 config.save_config()——它会把启动时缓存的整个内存 _cfg
+        # 序列化写回，从而覆盖用户后来在磁盘上手改的其它键（如 edge_tts_timeout）。
+        # 这里改为：从磁盘重新读取当前 config.toml，只合并 3 个视觉键，再写回。
+        import toml as _toml
+
+        cfg_path = config.config_file
+        disk_cfg: dict = {}
+        if os.path.isfile(cfg_path):
+            try:
+                disk_cfg = _toml.load(cfg_path)
+            except Exception as load_err:
+                logger.error(f"failed to load config.toml for save: {load_err}")
+                disk_cfg = {}
+        disk_app = disk_cfg.setdefault("app", {})
+        disk_app[_CFG_VL_KEY] = key_val
+        disk_app[_CFG_VL_BASE] = base_val
+        disk_app[_CFG_VL_MODEL] = model_val
+        try:
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                f.write(_toml.dumps(disk_cfg))
+            # 同步更新内存里的 config.app，本会话后续读取一致
+            config.app[_CFG_VL_KEY] = key_val
+            config.app[_CFG_VL_BASE] = base_val
+            config.app[_CFG_VL_MODEL] = model_val
+            st.success(tr("Vision Config Saved"))
+        except Exception as e:
+            logger.error(f"failed to save vision config: {e}")
+            st.error(f"{tr('Vision Config Save Failed')}: {e}")
 
 vl_key = (st.session_state.get("ppt_vl_key") or "").strip()
 vl_base = (st.session_state.get("ppt_vl_base") or "").strip() or DEFAULT_VL_BASE_URL
@@ -492,34 +537,44 @@ if st.button(
     elif not nonempty_texts:
         st.error(tr("Need Narration First"))
     else:
-        full_script = "。".join(t.rstrip("。") for t in nonempty_texts)
         subject = (st.session_state.get("ppt_subject") or "").strip() or "PPT"
 
-        # 落盘图片为本地素材（命名同 Main.py：file_id_name）
+        # 按页配对：每个文件 → (落盘图片路径, 该页解说文本)。
+        # 落盘逻辑同原流程（PPTX 的 _path 已落盘；上传图片写 local_videos）。
         local_videos_dir = utils.storage_dir("local_videos", create=True)
-        materials: list[MaterialInfo] = []
+        pages: list[tuple[str, str]] = []
+        dropped_empty = 0
         for f in sorted_files:
             if hasattr(f, "_path") and not hasattr(f, "file_id"):
-                # 来自 PPTX 流程：已落盘，直接用
                 file_path = f._path
             else:
                 file_path = os.path.join(local_videos_dir, f"{f.file_id}_{f.name}")
                 with open(file_path, "wb") as out:
                     out.write(f.getbuffer())
-            m = MaterialInfo()
-            m.provider = "local"
-            m.url = file_path
-            materials.append(m)
+            text = (st.session_state.get(_safe_key(f.name), "") or "").strip()
+            if not text:
+                # 按页管线靠每页音频驱动画面时长，空文本页无法 TTS，跳过（该页不出现在视频里）
+                dropped_empty += 1
+                continue
+            pages.append((file_path, text))
+
+        if dropped_empty:
+            st.warning(
+                f"{dropped_empty} 页解说为空已跳过（按页管线下空页无法生成）。"
+            )
+        if not pages:
+            st.error(tr("Need Narration First"))
+            st.stop()
 
         task_id = str(uuid4())
         params = VideoParams(
             video_subject=subject,
-            video_script=full_script,
+            video_script="",  # 按页管线不再使用整段脚本
             video_aspect=video_aspect,
             video_source="local",
-            video_materials=materials,
+            video_materials=[],
             video_concat_mode=VideoConcatMode.sequential.value,
-            video_clip_duration=clip_duration,
+            video_clip_duration=clip_duration,  # 按页管线不用，保留兼容
             voice_name=voice_name,
             subtitle_enabled=subtitle_enabled,
             font_name="STHeitiMedium.ttc",
@@ -530,15 +585,39 @@ if st.button(
             video_count=1,
         )
 
-        logger.info(f"PPT to Video task: {task_id}")
+        logger.info(f"PPT to Video (per-page) task: {task_id}, pages: {len(pages)}")
         logger.info(utils.to_json(params))
 
-        with st.spinner(tr("Generating Video")):
-            result = tm.start(task_id=task_id, params=params)
+        # 临时挂一个 loguru sink，捕获生成期间打出的 ERROR，用于回显给用户。
+        # 注意：传 format 时 callable 收到的是已格式化的字符串，不是 record dict。
+        captured_errors: list[str] = []
+        sink_id = logger.add(
+            lambda msg: captured_errors.append(str(msg).strip()),
+            level="ERROR",
+            format="{message}",
+        )
+        result = None
+        try:
+            with st.spinner(tr("Generating Video")):
+                result = ppt_video.generate_ppt_video(
+                    task_id=task_id, params=params, pages=pages
+                )
+        except Exception as e:
+            # 按页管线失败时抛异常（不像 tm.start 返回 None）。记录后走统一错误展示。
+            logger.error(f"PPT 按页生成失败: {e}")
+            result = None
+        finally:
+            logger.remove(sink_id)
 
         if not result or "videos" not in result:
-            st.error(tr("Video Generation Failed"))
-            logger.error(tr("Video Generation Failed"))
+            # 取最后一条 ERROR 作为最贴近失败点的线索（日志里通常已层层打了原因）
+            detail = captured_errors[-1].strip() if captured_errors else ""
+            if detail:
+                st.error(f"{tr('Video Generation Failed')}: {detail}")
+                logger.error(f"视频生成失败: {detail}")
+            else:
+                st.error(tr("Video Generation Failed"))
+                logger.error(tr("Video Generation Failed"))
             st.stop()
 
         st.success(tr("Video Generation Completed"))
