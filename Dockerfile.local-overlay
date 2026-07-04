@@ -1,0 +1,64 @@
+# 旁路构建：在网络隔离环境（docker.io 不可达）下，复用本地已构建的
+# moneyprinterturbo-webui:latest（基于 nvcr.io/nvidia/cuda，3 周前构建），
+# 只叠加 PPTX 渲染所需的 LibreOffice / poppler / CJK 字体层。
+#
+# 用法（在项目根目录）：
+#   docker build -f Dockerfile.local-overlay -t moneyprinterturbo-webui:local .
+#
+# 此 Dockerfile 与 Dockerfile/Dockerfile.gpu 完全独立，不修改它们。
+
+FROM moneyprinterturbo-webui:latest
+
+USER root
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 项目代码用现有的；requirements 走 aliyun pypi 镜像，离线环境也无碍。
+WORKDIR /MoneyPrinterTurbo
+
+# 1) 配置 Debian 镜像源（基础镜像是 Ubuntu，本机 Debian 源用不上，但写也无害）
+RUN cp /etc/apt/sources.list /etc/apt/sources.list.bak 2>/dev/null || true && \
+    if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
+        # Ubuntu noble/jammy 源切到清华镜像
+        sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g; s|http://security.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true; \
+    fi && \
+    if [ -f /etc/apt/sources.list ]; then \
+        sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g; s|http://security.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true; \
+    fi
+
+# 2) 安装 LibreOffice Impress + poppler-utils + CJK 字体
+#    不重装 git/ffmpeg/imagemagick（旧镜像已含）。
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libreoffice-impress \
+        libreoffice-core \
+        poppler-utils \
+        fonts-noto-cjk \
+        fonts-noto-cjk-extra \
+    || apt-get install -y --no-install-recommends \
+        libreoffice-impress \
+        libreoffice-core \
+        poppler-utils \
+        fonts-noto-cjk \
+        fonts-noto-cjk-extra; \
+    rm -rf /var/lib/apt/lists/*
+
+# 3) 重新拷贝代码并升级 pip 依赖（保留上一镜像的 site-packages，仅增量）
+COPY requirements.txt ./
+RUN python3 -m pip install --no-cache-dir \
+        -i https://mirrors.aliyun.com/pypi/simple/ \
+        --trusted-host mirrors.aliyun.com \
+        --retries 3 --timeout 60 \
+        -r requirements.txt 2>&1 | tail -20 \
+    || python3 -m pip install --no-cache-dir \
+        -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/ \
+        --trusted-host mirrors.tuna.tsinghua.edu.cn \
+        --retries 3 --timeout 60 \
+        -r requirements.txt 2>&1 | tail -20 \
+    || python3 -m pip install --no-cache-dir \
+        --retries 3 --timeout 60 \
+        -r requirements.txt 2>&1 | tail -20
+
+COPY . .
+
+# 默认 streamlit 入口（沿用旧镜像）
+CMD ["streamlit", "run", "./webui/Main.py","--browser.serverAddress=127.0.0.1","--server.enableCORS=True","--browser.gatherUsageStats=False","--server.showEmailPrompt=False"]
